@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Unfold",
+  "description": "Save any web page with its tabs, accordions and menus still working.",
+  "minimum_chrome_version": "120",
+  "action": {
+    "default_title": "Unfold this page",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "scripting"]
+}

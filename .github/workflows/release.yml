@@ -1,0 +1,89 @@
+name: Build & Release
+
+# Builds the release artifact and, depending on the trigger:
+#  - push to staging: a sandbox that exercises the whole build and publish path and updates a
+#    rolling "staging" pre-release. This is the pre-merge gate, so a broken release pipeline
+#    fails before main rather than after it.
+#  - push to main: publishes a real GitHub Release tagged v<VERSION>, and only when that tag
+#    does not already exist, so an ordinary merge that did not bump the version cannot cut a
+#    duplicate release.
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version & channel
+        id: cfg
+        run: |
+          VN=$(node -p "require('./package.json').version")
+          echo "name=$VN" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "title=Unfold $VN" >> "$GITHUB_OUTPUT"
+            if git ls-remote --tags origin "refs/tags/v$VN" | grep -q .; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::v$VN already released — bump the version to cut a new one."
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "title=Unfold $VN (staging sandbox)" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.skip == 'false'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.cfg.outputs.skip == 'false'
+
+      - name: Build release artifact
+        if: steps.cfg.outputs.skip == 'false'
+
+        run: |
+          npm run package
+          mv unfold.zip "unfold-${{ steps.cfg.outputs.name }}.zip"
+
+      - name: Upload artifact
+        if: steps.cfg.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unfold-${{ steps.cfg.outputs.name }}-${{ github.run_id }}
+          path: unfold-${{ steps.cfg.outputs.name }}.zip
+
+      - name: Publish staging sandbox pre-release
+        if: steps.cfg.outputs.skip == 'false' && github.ref_name == 'staging'
+        run: |
+          gh release delete staging --yes --cleanup-tag 2>/dev/null || true
+          gh release create staging "unfold-${{ steps.cfg.outputs.name }}.zip" \
+            --prerelease --target "${{ github.sha }}" \
+            --title "${{ steps.cfg.outputs.title }}" \
+            --notes "Sandbox build from staging — verifies the release pipeline. Not a stable release."
+
+      - name: Publish release
+        if: steps.cfg.outputs.skip == 'false' && github.ref_name == 'main'
+        run: |
+          # Release notes are that version's CHANGELOG section. Same script the release
+          # command uses, so the notes and the pull request body cannot drift apart.
+          python3 scripts/changelog.py section "${{ steps.cfg.outputs.name }}" > notes.md
+          gh release create "v${{ steps.cfg.outputs.name }}" "unfold-${{ steps.cfg.outputs.name }}.zip" \
+            --title "${{ steps.cfg.outputs.title }}" --notes-file notes.md

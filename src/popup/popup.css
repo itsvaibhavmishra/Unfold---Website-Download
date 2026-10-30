@@ -1,0 +1,44 @@
+:root {
+  color-scheme: light dark;
+  --surface: #ffffff;
+  --ink: #1b1b1f;
+  --muted: #5d5d66;
+  --accent: #ff5722;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #141416;
+    --ink: #ededf0;
+    --muted: #a0a0aa;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, sans-serif;
+}
+
+.popup {
+  width: 300px;
+  padding: 16px;
+}
+
+.popup-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.popup-title::after {
+  content: ".";
+  color: var(--accent);
+}
+
+.popup-status {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
